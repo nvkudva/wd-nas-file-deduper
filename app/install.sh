@@ -15,7 +15,7 @@ mkdir -p "$APPDIR" "$APPDIR/trash"
 
 # 1. Install app files. Explicit list, never cp -r: dedupe.db, dedupe.db-wal
 #    and trash/ live in this directory and must survive a reinstall.
-for f in dedupe.py apkg.xml apkg.rc start.sh stop.sh init.sh remove.sh clean.sh dedupe.png; do
+for f in dedupe.py apkg.xml apkg.rc start.sh stop.sh init.sh remove.sh clean.sh setpw.sh dedupe.png; do
   cp -f "$SRC/$f" "$APPDIR/$f"
 done
 chmod +x "$APPDIR"/*.sh
@@ -72,4 +72,4 @@ IP="$(hostname -i 2>/dev/null | awk '{print $1}')"
 [ -n "$IP" ] || IP="$(ip -4 addr 2>/dev/null | awk '/inet /&&!/127.0.0.1/{split($2,a,"/"); print a[1]; exit}')"
 echo ""
 echo "Done. Open http://${IP:-<nas-ip>}:8090 and log in."
-echo "Reset the password: delete $APPDIR/dedupe.auth and re-run this script."
+echo "Change the password: printf 'newpass' | sh $APPDIR/setpw.sh"

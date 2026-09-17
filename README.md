@@ -69,6 +69,7 @@ re-`lstat`ed and re-hashed immediately before it moves.
 | `remove.sh` | Uninstall hook — stops app, removes monit watch, drops registry item |
 | `clean.sh` | Post-remove hook (no-op) |
 | `dedupe.png` | Dashboard tile icon |
+| `setpw.sh` | Set the password from stdin and restart |
 | `dedupe.auth` | Generated at install — `user:salt:pbkdf2`, mode 600, never committed |
 | `monit.dedupe.conf` | monit watch → boot-start + crash-restart |
 
@@ -95,8 +96,16 @@ Then open `http://<nas-ip>:8090` and log in.
 Re-running the installer is safe: it stops the app, replaces only its own files, and
 leaves `dedupe.db`, `trash/` and `dedupe.auth` untouched.
 
-To reset the password, delete `/mnt/HD/HD_a2/Nas_Prog/dedupe/dedupe.auth` and re-run
-the installer.
+To choose your own password:
+
+```bash
+ssh "$NAS" "printf 'newpassword' | sh /mnt/HD/HD_a2/Nas_Prog/dedupe/setpw.sh"
+```
+
+`setpw.sh` takes the password on stdin, not in `argv`, so it never appears in `ps`.
+It rehashes with a fresh salt and restarts the app to drop the cached header. Pass a
+username as `$1` to change that too. Deleting `dedupe.auth` and re-running the
+installer generates a random password instead.
 
 ## Uninstall
 
