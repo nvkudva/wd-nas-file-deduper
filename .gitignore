@@ -1,0 +1,7 @@
+# runtime artifacts
+*.log
+*.pid
+dedupe.db
+dedupe.db-shm
+dedupe.db-wal
+app/trash/

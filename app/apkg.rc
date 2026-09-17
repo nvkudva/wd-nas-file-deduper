@@ -1,0 +1,19 @@
+Package:	dedupe
+Section:	Addon
+Version:	1.0.0
+Packager:	Community
+Email:		none@localhost
+Homepage:	https://localhost
+Description:	Finds duplicate files on the NAS by size then partial hash, groups them by folder, and moves selected copies to a reversible trash folder.
+Icon:		dedupe.png
+AddonShowName:	File Deduper
+AddonIndexPage:
+AddonUsedPort:	8090
+InstDepend:
+InstConflict:
+StartDepend:
+StartConflict:
+CenterType: 1
+MinFWVer: 5.00.000
+MaxFWVer:
+IndividualFlag: 0
