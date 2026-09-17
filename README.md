@@ -6,6 +6,7 @@ SMB. Registers as a native app on the dashboard **Apps** page, same trick as
 
 Tested on firmware **5.33.102**, `armv7l`, Python **3.9.2**.
 
+![Folders view](docs/folders.png)
 
 ## Why it exists
 
@@ -46,9 +47,11 @@ Three tabs on `:8090`, behind an HTTP Basic login:
 - **Files** — duplicate groups, collapsed by the folder pair they span.
 - **Trash** — everything staged, restorable.
 
+![Files view](docs/files.png)
 
 **Browse…** picks the scan root, so you never hand-type a path:
 
+![Folder picker](docs/picker.png)
 
 Browsing is confined to the mounted data volumes — `_confined()` resolves symlinks
 first, so the picker can't be walked out of `/mnt/HD/HD_*2` into the rest of the

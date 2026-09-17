@@ -87,6 +87,7 @@ def snapshot():
     s["trash_n"], s["trash_bytes"] = c.execute(
         "SELECT COUNT(*), COALESCE(SUM(size),0) FROM trash").fetchone()
     s["busy"] = BUSY.is_set()
+    s["roots"] = BROWSE_ROOTS
     return s
 
 
@@ -415,9 +416,13 @@ def check_auth(header):
 # ------------------------------------------------------- folder browser
 # Browsing is confined to the data volumes: the picker must not become a
 # read-anywhere filesystem API just because the app is on the LAN.
-BROWSE_ROOTS = [p for p in ("/mnt/HD/HD_a2", "/mnt/HD/HD_b2",
-                            "/mnt/HD/HD_c2", "/mnt/HD/HD_d2")
-                if os.path.isdir(p)] or ["/"]
+# DEDUPE_ROOTS (colon-separated) overrides the volume list, for running the
+# app off-NAS during development.
+BROWSE_ROOTS = ([p for p in os.environ.get("DEDUPE_ROOTS", "").split(":") if p]
+                or [p for p in ("/mnt/HD/HD_a2", "/mnt/HD/HD_b2",
+                                "/mnt/HD/HD_c2", "/mnt/HD/HD_d2")
+                    if os.path.isdir(p)]
+                or ["/"])
 
 
 def _confined(path):
@@ -637,7 +642,7 @@ text-overflow:ellipsis;white-space:nowrap}
 <header>
 <h1>NAS Dedupe <span class="tag">size &rarr; 4 MB head+tail hash</span></h1>
 <div class="row">
-<input id="root" size="40" value="/mnt/HD/HD_a2/Public/media/Photos">
+<input id="root" size="40" value="" placeholder="pick a folder to scan">
 <button id="bbrowse" class="ghost" title="Pick a folder to scan">Browse&hellip;</button>
 <span class="lbl">min MB</span><input id="min" size="3" value="50">
 <button id="bscan">Scan + verify</button>
@@ -704,7 +709,11 @@ headers:{"Content-Type":"application/json"},body:JSON.stringify(o||{})})
 .then(function(r){return r.json();})
 .catch(function(e){toast("Request failed: "+e.message+" &mdash; is the tunnel up?",1);
  throw e;});}
-function short(p){return p.replace("/mnt/HD/HD_a2/","");}
+var ROOTS=[];
+function short(p){
+ for(var i=0;i<ROOTS.length;i++){
+  if(p.indexOf(ROOTS[i]+"/")===0) return p.slice(ROOTS[i].length+1);}
+ return p;}
 function toast(msg,bad){
  var d=$("toast"); d.innerHTML=msg;
  d.style.background=bad?"#b23f2e":"#1d6b3a"; d.style.display="block";
@@ -747,7 +756,7 @@ window.addEventListener("hashchange",function(){
 
 /* ---- status ---- */
 function tick(){
- fetch("/api/status").then(function(r){return r.json();}).then(function(s){
+ return fetch("/api/status").then(function(r){return r.json();}).then(function(s){
   var NAME={idle:"Idle",scanning:"Scanning",scanned:"Scan complete",
    hashing:"Hashing",ready:"Ready",error:"Error"};
   var t="<b>"+(NAME[s.phase]||s.phase)+"</b>";
@@ -761,6 +770,8 @@ function tick(){
     +gb(s.waste)+"</b> reclaimable &middot; trash "+s.trash_n+" files ("
     +gb(s.trash_bytes)+")";
   $("stat").innerHTML=t;
+  if(s.roots) ROOTS=s.roots;
+  if(!$("root").value&&ROOTS.length) $("root").value=ROOTS[0];
   $("bscan").disabled=s.busy; $("bver").disabled=s.busy;
   if(BUSY&&!s.busy) load();
   BUSY=s.busy;
@@ -1001,7 +1012,9 @@ $("bempty").onclick=function(){
  arm(this,"PERMANENTLY delete all trash",function(){
   post("/api/empty").then(function(r){report(r);load();});});};
 
-setInterval(tick,1300); tick(); showTab(location.hash.slice(1));
+/* first tick resolves ROOTS, which short() needs before the first render */
+setInterval(tick,1300);
+tick().then(function(){showTab(location.hash.slice(1));});
 </script></body></html>
 """
 

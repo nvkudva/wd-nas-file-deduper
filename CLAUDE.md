@@ -146,22 +146,35 @@ can place a normal app dir under `Nas_Prog`, inject an `<item>`, and supervise w
 
 ## Screenshotting the UI
 
-The browser pane can't save files and won't show the Basic-auth prompt. Headless
-Chrome on the Mac does both:
+Screenshots in `docs/` are **published**, so they are never taken against the real
+library — folder names in a photo collection are personal data. They are generated
+from a synthetic tree at a neutral path, with the app running locally on the Mac:
 
 ```bash
-ssh -N -L 8090:127.0.0.1:8090 sshd@<nas-ip> &   # tunnel
+DEDUPE_ROOTS=/tmp/nas/HD_a2 DEDUPE_PORT=8091 python3 app/dedupe.py &
+curl -s -X POST -d '{"root":"/tmp/nas/HD_a2/Public/media","min_mb":1}' \
+  http://127.0.0.1:8091/api/scan
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
   --headless=new --disable-gpu --hide-scrollbars --force-dark-mode \
-  --virtual-time-budget=7000 --window-size=1400,980 \
-  --screenshot=docs/folders.png "http://localhost:8090/#folders"
+  --virtual-time-budget=8000 --window-size=1400,700 \
+  --screenshot=docs/folders.png "http://127.0.0.1:8091/#folders"
 ```
 
-The `#folders` / `#files` / `#trash` / `#browse` hashes exist partly so headless
-Chrome — which cannot click — can reach every view. To capture with auth held aside,
-stop the app, `mv dedupe.auth dedupe.auth.hold`, restart with
-`DEDUPE_HOST=127.0.0.1`, shoot, then move it back and restart. Keep that window
-short, and never leave it bound to `0.0.0.0` without the auth file.
+`DEDUPE_ROOTS` (colon-separated) overrides the `/mnt/HD/HD_*2` volume list, which is
+what makes off-NAS development possible at all — `_confined()` and `short()` both key
+off it.
+
+Two reasons it works this way rather than driving a browser:
+
+- The Claude browser pane cannot save a file, and will not render the Basic-auth
+  prompt (you get the bare 401 body).
+- Headless Chrome cannot click, so every view has to be reachable by URL. That is
+  what the `#folders` / `#files` / `#trash` / `#browse` hashes are for, as well as
+  being real deep links.
+
+The demo tree wants the same *shapes* as a real library — an exports folder mirroring
+an originals folder, a camera backup nested inside its own parent — since those are
+the cases the Folders view exists to show.
 
 ## Working with the user's data
 
