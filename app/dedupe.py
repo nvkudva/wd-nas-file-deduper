@@ -6,7 +6,9 @@ md5 of the first and last 4 MB -> never hash whole files.
 Deletes are staged as a same-filesystem rename into a trash dir, so they are
 instant and reversible until the trash is explicitly emptied.
 """
+import base64
 import hashlib
+import hmac
 import html
 import json
 import os
@@ -22,6 +24,8 @@ DB = os.path.join(HERE, "dedupe.db")
 TRASH = os.path.join(HERE, "trash")
 HOST = os.environ.get("DEDUPE_HOST", "127.0.0.1")
 PORT = int(os.environ.get("DEDUPE_PORT", "8090"))
+AUTHFILE = os.path.join(HERE, "dedupe.auth")
+PBKDF2_ROUNDS = 50000
 CHUNK = 4 << 20
 SKIP_DIRS = {".wdmc", "restsdk-data", ".systemfile", "lost+found",
              ".!@#$recycle", ".wdtmp", "trash"}
@@ -354,6 +358,59 @@ def run_bg(fn, *a):
     return True
 
 
+# ---------------------------------------------------------------- auth
+# dedupe.auth holds one line: user:salt_hex:pbkdf2_hex
+# pbkdf2 on armv7 costs ~0.3 s, and the UI polls every 1.3 s, so verified
+# Authorization headers are cached rather than re-derived per request.
+_auth_cache = set()
+_auth_lock = threading.Lock()
+
+
+def hash_pw(password, salt):
+    return hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt, PBKDF2_ROUNDS).hex()
+
+
+def load_auth():
+    """Return (user, salt_bytes, hexdigest), or None if no credentials are set."""
+    try:
+        line = open(AUTHFILE).read().strip()
+    except IOError:
+        return None
+    parts = line.split(":")
+    if len(parts) != 3 or not all(parts):
+        return None
+    user, salt_hex, digest = parts
+    try:
+        return user, bytes.fromhex(salt_hex), digest
+    except ValueError:
+        return None
+
+
+def check_auth(header):
+    """Validate an Authorization header against dedupe.auth."""
+    cred = load_auth()
+    if cred is None:
+        return True                       # no credentials configured
+    if not header or not header.startswith("Basic "):
+        return False
+    with _auth_lock:
+        if header in _auth_cache:
+            return True
+    try:
+        raw = base64.b64decode(header[6:]).decode("utf-8")
+        user, _, password = raw.partition(":")
+    except Exception:
+        return False
+    want_user, salt, want_digest = cred
+    ok = (hmac.compare_digest(user, want_user)
+          and hmac.compare_digest(hash_pw(password, salt), want_digest))
+    if ok:
+        with _auth_lock:
+            _auth_cache.add(header)
+    return ok
+
+
 class H(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.0"
 
@@ -373,7 +430,22 @@ class H(BaseHTTPRequestHandler):
     def _json(self, obj):
         self._send(json.dumps(obj), "application/json")
 
+    def _authed(self):
+        if check_auth(self.headers.get("Authorization")):
+            return True
+        body = b"authentication required"
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Basic realm="File Deduper"')
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(body)
+        return False
+
     def do_GET(self):
+        if not self._authed():
+            return
         p = self.path.split("?")[0]
         if p == "/":
             return self._send(PAGE, "text/html; charset=utf-8")
@@ -388,6 +460,8 @@ class H(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
+        if not self._authed():
+            return
         n = int(self.headers.get("Content-Length") or 0)
         try:
             body = json.loads(self.rfile.read(n) or b"{}")
@@ -788,6 +862,10 @@ setInterval(tick,1300); tick(); load();
 
 
 if __name__ == "__main__":
+    if HOST not in ("127.0.0.1", "localhost") and load_auth() is None:
+        sys.exit("refusing to bind %s with no credentials: %s is missing or "
+                 "malformed. Run install.sh, or set DEDUPE_HOST=127.0.0.1."
+                 % (HOST, AUTHFILE))
     init_db()
     os.makedirs(TRASH, exist_ok=True)
     srv = ThreadingHTTPServer((HOST, PORT), H)

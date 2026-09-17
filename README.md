@@ -38,7 +38,7 @@ legitimately — check before deleting:
 
 ## The UI
 
-Three tabs on `:8090`:
+Three tabs on `:8090`, behind an HTTP Basic login:
 
 - **Folders** — duplicate folder *pairs*, picked with a radio button per side.
 - **Files** — duplicate groups, collapsed by parent folder.
@@ -69,6 +69,7 @@ re-`lstat`ed and re-hashed immediately before it moves.
 | `remove.sh` | Uninstall hook — stops app, removes monit watch, drops registry item |
 | `clean.sh` | Post-remove hook (no-op) |
 | `dedupe.png` | Dashboard tile icon |
+| `dedupe.auth` | Generated at install — `user:salt:pbkdf2`, mode 600, never committed |
 | `monit.dedupe.conf` | monit watch → boot-start + crash-restart |
 
 ## Install (on the NAS, over SSH)
@@ -79,16 +80,23 @@ scp -r app "$NAS":/tmp/dedupe-app
 ssh "$NAS" 'sh /tmp/dedupe-app/install.sh'
 ```
 
-Then tunnel to it:
+The installer generates a random password on first run and **prints it once**:
 
-```bash
-ssh -N -L 8090:127.0.0.1:8090 sshd@<nas-ip>
+```
+  =============================================
+   File Deduper login  (shown once - save it)
+     user:     admin
+     password: <generated>
+  =============================================
 ```
 
-and open <http://localhost:8090>.
+Then open `http://<nas-ip>:8090` and log in.
 
 Re-running the installer is safe: it stops the app, replaces only its own files, and
-leaves `dedupe.db` and `trash/` untouched.
+leaves `dedupe.db`, `trash/` and `dedupe.auth` untouched.
+
+To reset the password, delete `/mnt/HD/HD_a2/Nas_Prog/dedupe/dedupe.auth` and re-run
+the installer.
 
 ## Uninstall
 
@@ -101,11 +109,17 @@ before uninstalling** if you want that space back.
 
 ## Caveats
 
-- **Binds `127.0.0.1` by design.** Unlike filebrowser, this app has *no login* and
-  exposes `/api/trash` and `/api/empty` — unauthenticated mass delete. That means the
-  dashboard's **Go to app** link won't reach it; use the SSH tunnel. To expose it on
-  the LAN anyway, set `DEDUPE_HOST=0.0.0.0` in `start.sh` and accept that anyone on
-  your network can wipe files.
+- **Auth is HTTP Basic over plain HTTP.** Credentials are base64, not encrypted, so
+  anyone sniffing your LAN can read them. That is an accepted trade for a home NAS on
+  a trusted network — do not port-forward this to the internet.
+- **`dedupe.py` refuses to bind anything but localhost when `dedupe.auth` is missing
+  or malformed.** The app exposes `/api/trash` and `/api/empty` — mass delete — so the
+  interlock makes "exposed with no password" unreachable by accident, including after
+  a botched reinstall. Set `DEDUPE_HOST=127.0.0.1` in `start.sh` to go back to
+  tunnel-only access (`ssh -N -L 8090:127.0.0.1:8090 <user>@<nas>`).
+- **The password is stored as PBKDF2-SHA256** (50k rounds, 16-byte salt) in
+  `dedupe.auth`, mode `600`. Verified `Authorization` headers are cached in memory,
+  because a 50k-round derivation costs ~0.3 s on armv7 and the UI polls every 1.3 s.
 - **`pgrep -f` / `pkill -f` are unusable here** — the pattern matches the calling
   script's own command line, so `start.sh` reports a false "already running" and
   `pkill` kills the SSH session. Both hooks use a pidfile instead.

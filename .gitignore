@@ -5,3 +5,4 @@ dedupe.db
 dedupe.db-shm
 dedupe.db-wal
 app/trash/
+app/dedupe.auth

@@ -20,7 +20,34 @@ for f in dedupe.py apkg.xml apkg.rc start.sh stop.sh init.sh remove.sh clean.sh 
 done
 chmod +x "$APPDIR"/*.sh
 
-# 2. Register in the dashboard app list (inject <item> if missing).
+# 2. Generate HTTP Basic credentials on first install. The app is reachable on
+#    the LAN, so it refuses to start off-localhost without this file.
+PY=/usr/bin/python3
+[ -x "$PY" ] || PY="$(command -v python3)"
+if [ ! -s "$APPDIR/dedupe.auth" ]; then
+  "$PY" - "$APPDIR/dedupe.auth" <<'GENEOF'
+import hashlib, os, secrets, sys
+user = "admin"
+password = secrets.token_urlsafe(12)
+salt = secrets.token_bytes(16)
+digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 50000).hex()
+with open(sys.argv[1], "w") as f:
+    f.write("%s:%s:%s\n" % (user, salt.hex(), digest))
+os.chmod(sys.argv[1], 0o600)
+print("")
+print("  =============================================")
+print("   File Deduper login  (shown once - save it)")
+print("     user:     %s" % user)
+print("     password: %s" % password)
+print("  =============================================")
+print("")
+GENEOF
+else
+  echo "Keeping existing credentials in $APPDIR/dedupe.auth"
+fi
+chmod 600 "$APPDIR/dedupe.auth"
+
+# 3. Register in the dashboard app list (inject <item> if missing).
 if ! grep -q "<name>dedupe</name>" "$ALL" 2>/dev/null; then
   cp -a "$ALL" "$ALL.bak.dedupe"
   sed -n '/<item>/,/<\/item>/p' "$APPDIR/apkg.xml" > /tmp/dedupe_item.xml
@@ -32,21 +59,17 @@ if ! grep -q "<name>dedupe</name>" "$ALL" 2>/dev/null; then
   echo "Registered in $ALL"
 fi
 
-# 3. Supervise with monit (boot-start + crash-restart).
+# 4. Supervise with monit (boot-start + crash-restart).
 cp -f "$SRC/monit.dedupe.conf" "$MONIT"
 monit reload 2>/dev/null || true
 sleep 2
 monit monitor dedupe 2>/dev/null || true
 
-# 4. Start now.
+# 5. Start now.
 sh "$APPDIR/start.sh" "$APPDIR"
 
-cat <<'MSG'
-
-Done. The app binds 127.0.0.1:8090 - it has no login and can delete files,
-so the dashboard "Go to app" link will not reach it. Access it over a tunnel:
-
-    ssh -N -L 8090:127.0.0.1:8090 <user>@<nas>    # then http://localhost:8090
-
-To expose it on the LAN anyway, set DEDUPE_HOST=0.0.0.0 in start.sh.
-MSG
+IP="$(hostname -i 2>/dev/null | awk '{print $1}')"
+[ -n "$IP" ] || IP="$(ip -4 addr 2>/dev/null | awk '/inet /&&!/127.0.0.1/{split($2,a,"/"); print a[1]; exit}')"
+echo ""
+echo "Done. Open http://${IP:-<nas-ip>}:8090 and log in."
+echo "Reset the password: delete $APPDIR/dedupe.auth and re-run this script."

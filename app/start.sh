@@ -10,9 +10,9 @@ PY=/usr/bin/python3
 [ -x "$PY" ] || PY="$(command -v python3)"
 [ -x "$PY" ] || { echo "python3 not found"; exit 1; }
 
-# Bind localhost by default: this app has no login and can delete files.
-# Set DEDUPE_HOST=0.0.0.0 to expose it on the LAN (see README caveats).
-DEDUPE_HOST="${DEDUPE_HOST:-127.0.0.1}"
+# Exposed on the LAN, protected by the HTTP Basic credentials in dedupe.auth.
+# dedupe.py refuses to bind anything but localhost if that file is missing.
+DEDUPE_HOST="${DEDUPE_HOST:-0.0.0.0}"
 DEDUPE_PORT="${DEDUPE_PORT:-8090}"
 export DEDUPE_HOST DEDUPE_PORT
 
