@@ -17,6 +17,7 @@ import stat
 import sys
 import threading
 import time
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -411,6 +412,63 @@ def check_auth(header):
     return ok
 
 
+# ------------------------------------------------------- folder browser
+# Browsing is confined to the data volumes: the picker must not become a
+# read-anywhere filesystem API just because the app is on the LAN.
+BROWSE_ROOTS = [p for p in ("/mnt/HD/HD_a2", "/mnt/HD/HD_b2",
+                            "/mnt/HD/HD_c2", "/mnt/HD/HD_d2")
+                if os.path.isdir(p)] or ["/"]
+
+
+def _confined(path):
+    """Resolve path and return it only if it sits inside a browse root."""
+    real = os.path.realpath(path)
+    for root in BROWSE_ROOTS:
+        rroot = os.path.realpath(root)
+        if real == rroot or real.startswith(rroot + os.sep):
+            return real
+    return None
+
+
+def browse(path):
+    """List immediate subdirectories of path, plus breadcrumb parts."""
+    if not path:
+        path = BROWSE_ROOTS[0]
+    real = _confined(path)
+    if real is None or not os.path.isdir(real):
+        real = os.path.realpath(BROWSE_ROOTS[0])
+
+    dirs = []
+    try:
+        with os.scandir(real) as it:
+            for e in it:
+                if e.name.startswith(".") or e.name in SKIP_DIRS:
+                    continue
+                try:
+                    if not e.is_dir(follow_symlinks=False):
+                        continue
+                except OSError:
+                    continue
+                dirs.append({"name": e.name, "path": os.path.join(real, e.name)})
+    except OSError as exc:
+        return {"path": real, "error": str(exc), "dirs": [], "crumbs": [],
+                "parent": None}
+    dirs.sort(key=lambda d: d["name"].lower())
+
+    parent = os.path.dirname(real)
+    if _confined(parent) is None or parent == real:
+        parent = None
+
+    crumbs, walk = [], real
+    while True:
+        crumbs.insert(0, {"name": os.path.basename(walk) or walk, "path": walk})
+        nxt = os.path.dirname(walk)
+        if nxt == walk or _confined(nxt) is None:
+            break
+        walk = nxt
+    return {"path": real, "parent": parent, "crumbs": crumbs, "dirs": dirs}
+
+
 class H(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.0"
 
@@ -457,6 +515,9 @@ class H(BaseHTTPRequestHandler):
             return self._json(folder_sets())
         if p == "/api/trash":
             return self._json(trash_list())
+        if p == "/api/browse":
+            q = urllib.parse.parse_qs(self.path.partition("?")[2])
+            return self._json(browse((q.get("path") or [""])[0]))
         self.send_error(404)
 
     def do_POST(self):
@@ -554,11 +615,30 @@ font-weight:600}
 border-top:1px solid #222c3b;padding:9px 20px;display:flex;gap:9px;
 align-items:center;margin:0 -20px -70px;z-index:10}
 #selinfo{color:#8b9cb3;font-size:12.5px;flex:1}
+.back{position:fixed;inset:0;background:#05080ccc;z-index:50;display:flex;
+align-items:center;justify-content:center}
+.dlg{background:#111823;border:1px solid #2b3648;border-radius:10px;width:min(620px,92vw);
+max-height:80vh;display:flex;flex-direction:column;box-shadow:0 18px 50px #0009}
+.dlg h3{margin:0;padding:13px 16px;border-bottom:1px solid #222c3b;font-size:14px}
+.crumbs{padding:9px 16px;border-bottom:1px solid #222c3b;font-size:12.5px;
+color:#8b9cb3;display:flex;flex-wrap:wrap;gap:2px;align-items:center}
+.crumbs a{color:#6ea2f0;cursor:pointer;text-decoration:none}
+.crumbs a:hover{text-decoration:underline}
+.dlist{overflow:auto;flex:1;padding:6px 0}
+.ditem{padding:7px 16px;cursor:pointer;display:flex;gap:9px;align-items:center;
+font-size:13px}
+.ditem:hover{background:#1a2230}
+.ditem .ic{color:#e0a33f}
+.dfoot{padding:11px 16px;border-top:1px solid #222c3b;display:flex;gap:9px;
+align-items:center}
+.dfoot code{flex:1;font-size:11.5px;color:#8b9cb3;overflow:hidden;
+text-overflow:ellipsis;white-space:nowrap}
 </style></head><body>
 <header>
 <h1>NAS Dedupe <span class="tag">size &rarr; 4 MB head+tail hash</span></h1>
 <div class="row">
-<input id="root" size="44" value="/mnt/HD/HD_a2/Public/media/Photos">
+<input id="root" size="40" value="/mnt/HD/HD_a2/Public/media/Photos">
+<button id="bbrowse" class="ghost" title="Pick a folder to scan">Browse&hellip;</button>
 <span class="lbl">min MB</span><input id="min" size="3" value="50">
 <button id="bscan">Scan + verify</button>
 <button id="bver" class="ghost" title="Re-hash without rescanning">Verify only</button>
@@ -646,15 +726,24 @@ function arm(btn,label,fn){
   btn.classList.remove("armed");},6000);}
 
 /* ---- tabs ---- */
+/* The tab lives in location.hash so a reload keeps you where you were. */
+function showTab(name){
+ /* #browse deep-links straight to the folder picker over the current tab. */
+ if(name==="browse"){ openPicker($("root").value); return; }
+ if(["folders","files","trash"].indexOf(name)<0) name="folders";
+ TAB=name;
+ document.querySelectorAll(".tab").forEach(function(x){
+   x.classList.toggle("on",x.dataset.t===name);});
+ ["folders","files","trash"].forEach(function(n){
+   $("v-"+n).style.display = n===name ? "" : "none";});
+ $("selbar").style.display = name==="files" ? "flex" : "none";
+ load();}
 document.querySelectorAll(".tab").forEach(function(t){
  t.onclick=function(){
-  document.querySelectorAll(".tab").forEach(function(x){
-    x.classList.toggle("on",x===t);});
-  TAB=t.dataset.t;
-  ["folders","files","trash"].forEach(function(n){
-    $("v-"+n).style.display = n===TAB ? "" : "none";});
-  $("selbar").style.display = TAB==="files" ? "flex" : "none";
-  load();};});
+  if(location.hash.slice(1)===t.dataset.t) showTab(t.dataset.t);
+  else location.hash=t.dataset.t;};});
+window.addEventListener("hashchange",function(){
+ showTab(location.hash.slice(1));});
 
 /* ---- status ---- */
 function tick(){
@@ -837,6 +926,62 @@ $("bapply").onclick=applyRule;
 $("bclear").onclick=function(){
  document.querySelectorAll(".cb").forEach(function(c){c.checked=false;});mark();};
 $("prot").oninput=function(){renderGroups();};
+var pickAt="";
+function closePicker(){var b=$("picker"); if(b) b.remove();}
+function openPicker(p){
+ closePicker();
+ var back=document.createElement("div");
+ back.className="back"; back.id="picker";
+ back.innerHTML='<div class="dlg"><h3>Choose a folder to scan</h3>'+
+  '<div class="crumbs" id="pcrumbs"></div><div class="dlist" id="plist"></div>'+
+  '<div class="dfoot"><code id="ppath"></code>'+
+  '<button class="ghost" id="pcancel">Cancel</button>'+
+  '<button id="puse">Use this folder</button></div></div>';
+ back.onclick=function(e){if(e.target===back)closePicker();};
+ document.body.appendChild(back);
+ $("pcancel").onclick=closePicker;
+ $("puse").onclick=function(){$("root").value=pickAt;closePicker();};
+ pickInto(p);
+}
+function pickInto(p){
+ fetch("/api/browse?path="+encodeURIComponent(p||""))
+ .then(function(r){return r.json();})
+ .then(function(d){
+  pickAt=d.path; $("ppath").textContent=d.path;
+  var cr=$("pcrumbs"); cr.innerHTML="";
+  (d.crumbs||[]).forEach(function(c,i){
+   if(i)cr.appendChild(document.createTextNode(" / "));
+   var a=document.createElement("a");
+   a.textContent=c.name; a.onclick=function(){pickInto(c.path);};
+   cr.appendChild(a);});
+  var ls=$("plist"); ls.innerHTML="";
+  if(d.parent){
+   var up=document.createElement("div");
+   up.className="ditem"; up.innerHTML='<span class="ic">&#8593;</span><span>..</span>';
+   up.onclick=function(){pickInto(d.parent);};
+   ls.appendChild(up);}
+  if(d.error){
+   var er=document.createElement("div");
+   er.className="ditem"; er.textContent=d.error; ls.appendChild(er);}
+  (d.dirs||[]).forEach(function(x){
+   var it=document.createElement("div");
+   it.className="ditem";
+   it.innerHTML='<span class="ic">&#128193;</span>';
+   var nm=document.createElement("span"); nm.textContent=x.name;
+   it.appendChild(nm);
+   it.onclick=function(){pickInto(x.path);};
+   ls.appendChild(it);});
+  if(!d.dirs.length&&!d.error){
+   var em=document.createElement("div");
+   em.className="ditem"; em.style.color="#8b9cb3";
+   em.textContent="no subfolders - scan this one";
+   ls.appendChild(em);}
+ });
+}
+$("bbrowse").onclick=function(){openPicker($("root").value);};
+document.addEventListener("keydown",function(e){
+ if(e.key==="Escape")closePicker();});
+
 $("bscan").onclick=function(){
  arm(this,"rescan (clears current results)",function(){
   post("/api/scan",{root:$("root").value,min_mb:$("min").value})
@@ -856,7 +1001,7 @@ $("bempty").onclick=function(){
  arm(this,"PERMANENTLY delete all trash",function(){
   post("/api/empty").then(function(r){report(r);load();});});};
 
-setInterval(tick,1300); tick(); load();
+setInterval(tick,1300); tick(); showTab(location.hash.slice(1));
 </script></body></html>
 """
 

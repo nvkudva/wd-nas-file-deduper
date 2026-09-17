@@ -6,6 +6,7 @@ SMB. Registers as a native app on the dashboard **Apps** page, same trick as
 
 Tested on firmware **5.33.102**, `armv7l`, Python **3.9.2**.
 
+
 ## Why it exists
 
 No prebuilt dedupe tool ships for armv7: fclones is x86-only, Czkawka is arm64-only,
@@ -41,8 +42,18 @@ legitimately — check before deleting:
 Three tabs on `:8090`, behind an HTTP Basic login:
 
 - **Folders** — duplicate folder *pairs*, picked with a radio button per side.
-- **Files** — duplicate groups, collapsed by parent folder.
+  One row per pair, not one per file: 213 shared files is a single decision, not 213.
+- **Files** — duplicate groups, collapsed by the folder pair they span.
 - **Trash** — everything staged, restorable.
+
+
+**Browse…** picks the scan root, so you never hand-type a path:
+
+
+Browsing is confined to the mounted data volumes — `_confined()` resolves symlinks
+first, so the picker can't be walked out of `/mnt/HD/HD_*2` into the rest of the
+filesystem now that the app is on the LAN. The current tab and the picker live in
+`location.hash`, so a reload puts you back where you were.
 
 Selection rules borrowed from paid dedupers (Duplicate Cleaner's Selection Assistant,
 Gemini 2's Smart Select): keep shallowest/deepest path, keep newest/oldest, keep the
@@ -55,6 +66,11 @@ you empty the trash. Restore puts them back *and* re-indexes them.
 The keep-one guard is computed server-side from the group's own rows, not from the
 client payload — the UI cannot be coaxed into deleting every copy. Each file is
 re-`lstat`ed and re-hashed immediately before it moves.
+
+## Roadmap
+
+Next five features — and two things deliberately not being built — are in
+[ROADMAP.md](ROADMAP.md).
 
 ## Files (`app/`)
 
