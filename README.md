@@ -1,12 +1,32 @@
-# WD FileDeduper
+<p align="center">
+  <img src="app/dedupe.png" width="104" alt="">
+</p>
 
-A duplicate-file finder that runs **on** a WD My Cloud EX2 Ultra (OS 5), not over
-SMB. Registers as a native app on the dashboard **Apps** page, same trick as
-[WD FileBrowser App](../WD%20FileBrowser%20App) — no signed `.bin` upload needed.
+<h1 align="center">WD FileDeduper</h1>
 
-Tested on firmware **5.33.102**, `armv7l`, Python **3.9.2**.
+<p align="center">
+  A duplicate-file finder that runs <b>on</b> a WD My Cloud NAS — not over SMB.<br>
+  Stdlib Python only, no compiler, no package manager, no dependencies.
+</p>
+
+<p align="center">
+  <img alt="firmware 5.33.102" src="https://img.shields.io/badge/firmware-5.33.102-0B6357">
+  <img alt="armv7l" src="https://img.shields.io/badge/arch-armv7l-0B6357">
+  <img alt="python 3.9.2" src="https://img.shields.io/badge/python-3.9.2%20stdlib-0B6357">
+  <img alt="dependencies none" src="https://img.shields.io/badge/dependencies-none-F0A93B">
+</p>
+
+---
+
+It registers as a native app on the My Cloud OS 5 dashboard **Apps** page — the same
+trick as the sibling *WD FileBrowser App* project, no signed `.bin` upload needed.
 
 ![Folders view](docs/folders.png)
+
+<p align="center"><i>
+  Duplicate folders as one decision per pair, not one per file.<br>
+  Screenshots are generated from a synthetic library, not a real one.
+</i></p>
 
 ## Why it exists
 
